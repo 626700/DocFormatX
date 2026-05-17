@@ -44,6 +44,34 @@ class SectionRule:
 
 
 @dataclass
+class BorderRule:
+    """单条边框规则"""
+    visible: bool = True
+    weight_pt: float = 1.0
+    color: str = "000000"
+
+
+@dataclass
+class TableBorders:
+    """表格所有边框规则"""
+    top: BorderRule = field(default_factory=BorderRule)
+    bottom: BorderRule = field(default_factory=BorderRule)
+    insideH: BorderRule = field(default_factory=BorderRule)
+    insideV: BorderRule = field(default_factory=BorderRule)
+    left: BorderRule = field(default_factory=BorderRule)
+    right: BorderRule = field(default_factory=BorderRule)
+
+
+@dataclass
+class TableStyle:
+    """表格样式定义"""
+    default_style: str = "full_grid"
+    alignment: str = "center"
+    header_bold: bool = True
+    borders: TableBorders = field(default_factory=TableBorders)
+
+
+@dataclass
 class StyleDocument:
     """完整的样式文档"""
     name: str = "未命名样式"
@@ -53,6 +81,7 @@ class StyleDocument:
     body: TextStyle = field(default_factory=TextStyle)
     inline_image: ImageStyle = field(default_factory=ImageStyle)
     sections: List[SectionRule] = field(default_factory=list)
+    table_style: TableStyle = field(default_factory=TableStyle)
 
     @classmethod
     def from_yaml(cls, path: Path) -> "StyleDocument":
@@ -103,5 +132,22 @@ class StyleDocument:
                 header_image=sec.get("header_image"),
                 page_number_start=sec.get("page_number_start"),
             ))
+
+        # 解析表格样式
+        table_cfg = data.get("table", {})
+        if table_cfg:
+            ts = doc.table_style
+            ts.default_style = table_cfg.get("default_style", "full_grid")
+            ts.alignment = table_cfg.get("alignment", "center")
+            ts.header_bold = table_cfg.get("header_bold", True)
+
+            borders = table_cfg.get("borders", {})
+            for side in ["top", "bottom", "insideH", "insideV", "left", "right"]:
+                b = borders.get(side, {})
+                setattr(ts.borders, side, BorderRule(
+                    visible=b.get("visible", True),
+                    weight_pt=b.get("weight_pt", 1.0),
+                    color=b.get("color", "000000"),
+                ))
 
         return doc

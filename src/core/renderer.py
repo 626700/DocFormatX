@@ -6,6 +6,7 @@ from docx import Document
 from docx.shared import Pt, Cm, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
+from lxml import etree
 import logging
 
 from .style_parser import StyleDocument, TextStyle, ImageStyle
@@ -27,11 +28,9 @@ def _apply_text_style(paragraph, style: TextStyle):
     for run in paragraph.runs:
         if style.font_name:
             run.font.name = style.font_name
-            # 设置中文字体（必须操作 XML）
             rPr = run._element.get_or_add_rPr()
             rFonts = rPr.find(qn('w:rFonts'))
             if rFonts is None:
-                from lxml import etree
                 rFonts = etree.SubElement(rPr, qn('w:rFonts'))
             rFonts.set(qn('w:eastAsia'), style.font_name)
 
@@ -59,7 +58,6 @@ def _apply_paragraph_style(paragraph, style: TextStyle):
         pf.line_spacing = style.line_spacing
 
     if style.first_line_indent_chars is not None:
-        # 两个字符 ≈ 当前字号的 2 倍
         indent_pt = (style.size_pt or 12) * style.first_line_indent_chars
         pf.first_line_indent = Pt(indent_pt)
 
@@ -82,35 +80,29 @@ def render(style_path: Path, content_path: Path, output_path: Path):
     # 3. 创建 Word 文档
     doc = Document()
 
-    # 设置默认正文字体（防止 Word 默认西文字体覆盖中文字体）
+    # 设置默认正文字体
     default_font = style_doc.body.font_name or "宋体"
     style = doc.styles["Normal"]
     style.font.name = default_font
     style.element.rPr.rFonts.set(qn('w:eastAsia'), default_font)
+
     # 3.5 插入目录
     paragraph = doc.add_paragraph()
     run = paragraph.add_run()
-
-    # 插入目录域代码
     fldChar_begin = run._element.makeelement(qn('w:fldChar'), {qn('w:fldCharType'): 'begin'})
     run._element.append(fldChar_begin)
-
     instrText = run._element.makeelement(qn('w:instrText'), {})
     instrText.text = " TOC \\o \"1-3\" \\h \\z \\u "
     run._element.append(instrText)
-
     fldChar_separate = run._element.makeelement(qn('w:fldChar'), {qn('w:fldCharType'): 'separate'})
     run._element.append(fldChar_separate)
-
     run2 = paragraph.add_run("（请在 Word 中右键此处 → 更新域 以生成目录）")
-    run2.font.color.rgb = None  # 自动颜色
+    run2.font.color.rgb = None
     run2.font.size = Pt(10)
-
     fldChar_end = run2._element.makeelement(qn('w:fldChar'), {qn('w:fldCharType'): 'end'})
     run2._element.append(fldChar_end)
+    doc.add_paragraph()
 
-    doc.add_paragraph()  # 空行隔开目录和正文
-    
     # 4. 逐块写入
     for block in blocks:
         if block.type == "title":
@@ -133,6 +125,102 @@ def render(style_path: Path, content_path: Path, output_path: Path):
             _apply_paragraph_style(p, style_doc.body)
             _apply_text_style(p, style_doc.body)
 
+        elif block.type == "table":
+            # 解析表格数据
+            lines = block.text.strip().split("\n")
+            rows = []
+            for line in lines:
+                line = line.strip()
+                if line.startswith("|") and line.endswith("|"):
+                    cells = [c.strip() for c in line[1:-1].split("|")]
+                    rows.append(cells)
+
+            if not rows:
+                continue
+
+            # 合并样式与内容属性
+            transpose = block.props.get("方向", "") == "竖"
+            border_style_key = block.props.get("样式", style_doc.table_style.default_style)
+            three_line = border_style_key in ("三线表", "three_line")
+
+            # 竖表处理：行列转置
+            if transpose:
+                header = rows[0]
+                data = rows[1:]
+                data_T = list(map(list, zip(*data)))
+                new_rows = []
+                for i, h in enumerate(header):
+                    new_rows.append([h] + data_T[i])
+                rows = new_rows
+
+            # 创建表格
+            num_cols = len(rows[0])
+            table = doc.add_table(rows=len(rows), cols=num_cols)
+            table.style = 'Light Grid Accent 1'
+
+            # 填充单元格
+            for i, row_data in enumerate(rows):
+                for j, cell_text in enumerate(row_data):
+                    cell = table.cell(i, j)
+                    cell.text = cell_text
+                    if (transpose and i == 0) or (not transpose and i == 0):
+                        if style_doc.table_style.header_bold:
+                            for paragraph in cell.paragraphs:
+                                for run in paragraph.runs:
+                                    run.bold = True
+
+            # 应用边框
+            tbl = table._tbl
+            tblPr = tbl.tblPr if tbl.tblPr is not None else etree.SubElement(tbl, qn('w:tblPr'))
+            for old_borders in tblPr.findall(qn('w:tblBorders')):
+                tblPr.remove(old_borders)
+            borders = etree.SubElement(tblPr, qn('w:tblBorders'))
+
+            if three_line:
+                # 三线表边框
+                top = etree.SubElement(borders, qn('w:top'))
+                top.set(qn('w:val'), 'single')
+                top.set(qn('w:sz'), '24')
+                top.set(qn('w:space'), '0')
+                top.set(qn('w:color'), '000000')
+
+                bottom = etree.SubElement(borders, qn('w:bottom'))
+                bottom.set(qn('w:val'), 'single')
+                bottom.set(qn('w:sz'), '24')
+                bottom.set(qn('w:space'), '0')
+                bottom.set(qn('w:color'), '000000')
+
+                insideH = etree.SubElement(borders, qn('w:insideH'))
+                insideH.set(qn('w:val'), 'single')
+                insideH.set(qn('w:sz'), '8')
+                insideH.set(qn('w:space'), '0')
+                insideH.set(qn('w:color'), '000000')
+
+                for side in ['left', 'right', 'insideV']:
+                    elem = etree.SubElement(borders, qn(f'w:{side}'))
+                    elem.set(qn('w:val'), 'none')
+                    elem.set(qn('w:sz'), '0')
+                    elem.set(qn('w:space'), '0')
+                    elem.set(qn('w:color'), 'auto')
+            else:
+                # 通用边框：根据 YAML 配置
+                yb = style_doc.table_style.borders
+                for side in ['top', 'bottom', 'insideH', 'insideV', 'left', 'right']:
+                    rule = getattr(yb, side)
+                    elem = etree.SubElement(borders, qn(f'w:{side}'))
+                    if rule.visible:
+                        elem.set(qn('w:val'), 'single')
+                        elem.set(qn('w:sz'), str(int(rule.weight_pt * 8)))
+                        elem.set(qn('w:space'), '0')
+                        elem.set(qn('w:color'), rule.color)
+                    else:
+                        elem.set(qn('w:val'), 'none')
+                        elem.set(qn('w:sz'), '0')
+                        elem.set(qn('w:space'), '0')
+                        elem.set(qn('w:color'), 'auto')
+
+            doc.add_paragraph()
+
         elif block.type == "image":
             img_path = Path(block.image_path)
             if img_path.exists():
@@ -148,17 +236,14 @@ def render(style_path: Path, content_path: Path, output_path: Path):
     # 5. 处理分节和页眉页脚
     section_rules = style_doc.sections
     if section_rules:
-        # 确保节数足够
         while len(doc.sections) < len(section_rules):
             doc.add_section()
 
         for i, rule in enumerate(section_rules):
             section = doc.sections[i]
-            # 断开与前一节的链接
             section.header.is_linked_to_previous = False
             section.footer.is_linked_to_previous = False
 
-            # 设置页眉
             if rule.header_text:
                 header = section.header
                 if header.paragraphs:
@@ -167,7 +252,6 @@ def render(style_path: Path, content_path: Path, output_path: Path):
                     hp = header.add_paragraph()
                 hp.text = rule.header_text
 
-            # 设置页脚页码
             if rule.page_number_start is not None:
                 footer = section.footer
                 if footer.paragraphs:
@@ -176,23 +260,18 @@ def render(style_path: Path, content_path: Path, output_path: Path):
                     fp = footer.add_paragraph()
                 fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-                # 添加页码域
                 run = fp.add_run()
                 fldChar1 = run._element.makeelement(qn('w:fldChar'), {qn('w:fldCharType'): 'begin'})
                 run._element.append(fldChar1)
-
                 instrText = run._element.makeelement(qn('w:instrText'), {})
                 instrText.text = " PAGE "
                 run._element.append(instrText)
-
                 fldChar2 = run._element.makeelement(qn('w:fldChar'), {qn('w:fldCharType'): 'end'})
                 run._element.append(fldChar2)
 
-                # 设置起始页码
                 sectPr = section._sectPr
                 pgNumType = sectPr.find(qn('w:pgNumType'))
                 if pgNumType is None:
-                    from lxml import etree
                     pgNumType = etree.SubElement(sectPr, qn('w:pgNumType'))
                 pgNumType.set(qn('w:start'), str(rule.page_number_start))
 

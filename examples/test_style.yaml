@@ -38,3 +38,28 @@ page_setup:
     - page: 4
       header_text: null
       page_number_start: 1
+
+      table:
+  default_style: "three_line"     # 可选: "three_line" / "full_grid" / "none"
+  alignment: "center"             # 表格水平对齐: left / center / right
+  header_bold: true               # 表头是否加粗
+
+  borders:
+    top:
+      visible: true
+      weight_pt: 1.5              # 线宽，磅
+      color: "000000"
+    bottom:
+      visible: true
+      weight_pt: 1.5
+      color: "000000"
+    insideH:
+      visible: true
+      weight_pt: 0.5
+      color: "000000"
+    insideV:
+      visible: false              # 竖线默认隐藏，即三线表
+    left:
+      visible: false
+    right:
+      visible: false
