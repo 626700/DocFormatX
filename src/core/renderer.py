@@ -87,21 +87,44 @@ def render(style_path: Path, content_path: Path, output_path: Path):
     style = doc.styles["Normal"]
     style.font.name = default_font
     style.element.rPr.rFonts.set(qn('w:eastAsia'), default_font)
+    # 3.5 插入目录
+    paragraph = doc.add_paragraph()
+    run = paragraph.add_run()
 
+    # 插入目录域代码
+    fldChar_begin = run._element.makeelement(qn('w:fldChar'), {qn('w:fldCharType'): 'begin'})
+    run._element.append(fldChar_begin)
+
+    instrText = run._element.makeelement(qn('w:instrText'), {})
+    instrText.text = " TOC \\o \"1-3\" \\h \\z \\u "
+    run._element.append(instrText)
+
+    fldChar_separate = run._element.makeelement(qn('w:fldChar'), {qn('w:fldCharType'): 'separate'})
+    run._element.append(fldChar_separate)
+
+    run2 = paragraph.add_run("（请在 Word 中右键此处 → 更新域 以生成目录）")
+    run2.font.color.rgb = None  # 自动颜色
+    run2.font.size = Pt(10)
+
+    fldChar_end = run2._element.makeelement(qn('w:fldChar'), {qn('w:fldCharType'): 'end'})
+    run2._element.append(fldChar_end)
+
+    doc.add_paragraph()  # 空行隔开目录和正文
+    
     # 4. 逐块写入
     for block in blocks:
         if block.type == "title":
-            p = doc.add_paragraph(block.text)
+            p = doc.add_paragraph(block.text, style="Title")
             _apply_paragraph_style(p, style_doc.title)
             _apply_text_style(p, style_doc.title)
 
         elif block.type == "heading_1":
-            p = doc.add_paragraph(block.text)
+            p = doc.add_paragraph(block.text, style="Heading 1")
             _apply_paragraph_style(p, style_doc.heading_1)
             _apply_text_style(p, style_doc.heading_1)
 
         elif block.type == "heading_2":
-            p = doc.add_paragraph(block.text)
+            p = doc.add_paragraph(block.text, style="Heading 2")
             _apply_paragraph_style(p, style_doc.heading_2)
             _apply_text_style(p, style_doc.heading_2)
 
