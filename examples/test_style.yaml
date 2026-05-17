@@ -1,0 +1,40 @@
+metadata:
+  name: "测试样式"
+
+styles:
+  title:
+    font_name: "黑体"
+    size_pt: 22
+    bold: false
+    alignment: "center"
+    space_before_pt: 12
+    space_after_pt: 12
+  heading_1:
+    font_name: "黑体"
+    size_pt: 16
+    bold: true
+    space_before_pt: 10
+  heading_2:
+    font_name: "楷体"
+    size_pt: 14
+    bold: false
+  body:
+    font_name: "仿宋"
+    size_pt: 15
+    first_line_indent_chars: 2
+    line_spacing: 1.5
+  inline_image:
+    width_cm: 10
+    alignment: "center"
+
+page_setup:
+  sections:
+    - page: 1
+      header_text: "机密文件 - 第一页"
+    - page: 2
+      header_text: null
+    - page: 3
+      header_text: "机密文件 - 第三页"
+    - page: 4
+      header_text: null
+      page_number_start: 1
