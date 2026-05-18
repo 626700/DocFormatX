@@ -11,6 +11,7 @@ import logging
 
 from .style_parser import StyleDocument, TextStyle, ImageStyle
 from .content_parser import ContentBlock, parse_content
+from image.classifier import ImageClassifier
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +70,10 @@ def render(style_path: Path, content_path: Path, output_path: Path):
     2. 解析内容 TXT
     3. 生成 Word 文档
     """
+
+     # 0. 初始化图片分类器
+    classifier = ImageClassifier()
+
     # 1. 加载样式
     style_doc = StyleDocument.from_yaml(style_path)
     log.info("已加载样式: %s", style_doc.name)
@@ -221,14 +226,27 @@ def render(style_path: Path, content_path: Path, output_path: Path):
 
             doc.add_paragraph()
 
-        elif block.type == "image":
+               elif block.type == "image":
             img_path = Path(block.image_path)
             if img_path.exists():
+                # 分类图片
+                result = classifier.classify(img_path)
+                log.info("图片分类: %s → %s", img_path.name, result.kind.value)
+
                 p = doc.add_paragraph()
                 if style_doc.inline_image.alignment in ALIGN_MAP:
                     p.alignment = ALIGN_MAP[style_doc.inline_image.alignment]
                 run = p.add_run()
                 run.add_picture(str(img_path), width=Cm(style_doc.inline_image.width_cm))
+
+                # 在图片下方标注分类结果
+                note = doc.add_paragraph()
+                note.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                note_run = note.add_run(
+                    f"[图片分类: {result.kind.value} | 置信度: {result.confidence:.0%} | {result.reason}]"
+                )
+                note_run.font.size = Pt(8)
+                note_run.font.color.rgb = None
             else:
                 log.warning("图片不存在: %s", img_path)
                 p = doc.add_paragraph(f"[图片缺失: {img_path.name}]")
